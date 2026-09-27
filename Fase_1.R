@@ -1,29 +1,34 @@
-# ==============================================================================
-# ETAPA A: DESCARGA, FILTRADO Y MUESTREO DE LA COHORTE (N = 225)
-# ==============================================================================
+
+# Fase 1: DESCARGA, FILTRADO Y MUESTREO DE LA COHORTE (N = 225)
+
 
 library(tidyverse)
 
 set.seed(123)
 
-# ------------------------------------------------------------------------------
+# Este script escribe sus ficheros de salida (accesiones_sra.txt,
+# metadatos_225_muestras_TFM.csv) en el directorio de trabajo actual de R.
+# Fija antes ese directorio a la carpeta del proyecto -- en RStudio, Session >
+# Set Working Directory > To Source File Location -- para que Fase_2.sh y
+# Fase_3.R encuentren esos ficheros después sin tener que moverlos a mano.
+
+
 # PASO 1: DESCARGA DE METADATOS DESDE ENA
-# ------------------------------------------------------------------------------
+
 cat("1. Descargando metadatos completos con campo de Estudio (study_accession)...\n")
 
 url_ena <- "https://www.ebi.ac.uk/ena/portal/api/search?result=read_run&query=tax_tree(1773)&fields=run_accession,study_accession,country,collection_date,instrument_model,library_strategy,read_count,fastq_ftp&limit=0&format=tsv"
 
 metadatos_raw <- read_tsv(url_ena, show_col_types = FALSE)
 
-# ------------------------------------------------------------------------------
-# PASO 2: LIMPIEZA, NORMALIZACIÓN Y FILTRADO RIGUROSO
-# ------------------------------------------------------------------------------
+
+# PASO 2: LIMPIEZA, NORMALIZACION Y FILTRADO 
+
 cat("2. Procesando y filtrando metadatos...\n")
 
 metadatos_limpios <- metadatos_raw %>%
   mutate(
     collection_year = as.numeric(str_extract(collection_date, "\\b(19|20)\\d{2}\\b")),
-    # Limpiar regiones tras los dos puntos (e.g. "Georgia: Tbilisi" -> "Georgia")
     country_clean = str_trim(str_remove(country, ":.*"))
   ) %>%
   filter(
@@ -38,12 +43,6 @@ metadatos_limpios <- metadatos_raw %>%
     !str_detect(country_clean, "(?i)missing|not collected|not provided|unknown")
   ) %>%
   # Normalización de sinonimias de países
-  # IMPORTANTE: "Korea" y "Congo" NO se colapsan a un único valor porque el
-  # vocabulario controlado de INSDC/ENA distingue "North Korea" de
-  # "South Korea", y "Republic of the Congo" de "Democratic Republic of the
-  # Congo" -- son países distintos con epidemiología de TB muy distinta.
-  # El orden de las reglas de Congo importa: "Democratic..." debe evaluarse
-  # antes que la regla genérica de "Congo".
   mutate(
     isolation_country = case_when(
       str_detect(country_clean, "(?i)^USA$|United States") ~ "USA",
@@ -65,23 +64,23 @@ metadatos_limpios <- metadatos_raw %>%
     )
   )
 
-cat("\n--- CONTEO TOP 15 PAÍSES TRAS LIMPIEZA DE SUBREGIONES ---\n")
-print(head(sort(table(metadatos_limpios$isolation_country), decreasing = TRUE), 15))
+cat("\n--- CONTEO TOP 10 PAÍSES TRAS LIMPIEZA DE SUBREGIONES ---\n")
+print(head(sort(table(metadatos_limpios$isolation_country), decreasing = TRUE),10))
 
-# ------------------------------------------------------------------------------
+
 # PASO 3: DEDUPLICACIÓN POR PROYECTO
-# ------------------------------------------------------------------------------
+
 cat("\n3. Controlando sesgo de proyecto (máximo 3 muestras por estudio)...\n")
 
 metadatos_heterogeneos <- metadatos_limpios %>%
   group_by(isolation_country, periodo, study_accession) %>%
-  slice_sample(n = 3, replace = FALSE) %>%   # Permitir hasta 3 por estudio aumenta los candidatos
+  slice_sample(n = 3, replace = FALSE) %>%   
   ungroup()
 
-# ------------------------------------------------------------------------------
+
 # PASO 4: SELECCIÓN DE PAÍSES REPRESENTATIVOS (TOP 5 CON MAYOR COBERTURA)
-# ------------------------------------------------------------------------------
-# Evaluar disponibilidad por país y seleccionar los 5 principales
+
+
 paises_conteo <- metadatos_heterogeneos %>%
   group_by(isolation_country, periodo) %>%
   summarise(n = n(), .groups = "drop") %>%
@@ -97,9 +96,9 @@ top_paises <- paises_conteo %>%
 cat("\n--- PAÍSES SELECCIONADOS PARA ALCANZAR N = 225 ---\n")
 print(top_paises)
 
-# ------------------------------------------------------------------------------
+
 # PASO 5: MUESTREO FINAL EXACTO (5 países x 3 períodos x 15 muestras = 225)
-# ------------------------------------------------------------------------------
+
 dataset_225_definitivo <- metadatos_heterogeneos %>%
   filter(isolation_country %in% top_paises) %>%
   group_by(isolation_country, periodo) %>%
@@ -109,18 +108,15 @@ dataset_225_definitivo <- metadatos_heterogeneos %>%
 cat("\n--- COHORTE FINAL DEFINITIVA ---\n")
 cat("Total de muestras seleccionadas:", nrow(dataset_225_definitivo), "\n")
 
-# ------------------------------------------------------------------------------
-# EXPORTACIÓN DE ARCHIVOS
-# ------------------------------------------------------------------------------
-# 1. Lista de accesos SRA para el pipeline de descarga (Fase_2.sh)
-write_lines(dataset_225_definitivo$run_accession, "solo_pendientes_sra.txt")
-write_lines(dataset_225_definitivo$run_accession, "lista_accesos_SRR_225.txt")
 
-# 2. Metadatos completos -- Fase_3.R los necesita para cruzar con TB-Profiler
-#    (país, año, período, estudio, instrumento). Sin este fichero, Fase_3.R
-#    se detiene con error al no encontrar sus datos de entrada.
+# EXPORTACIÓN DE ARCHIVOS
+
+# 1. Lista de accesos SRA para el pipeline de descarga 
+write_lines(dataset_225_definitivo$run_accession, "accesiones_sra.txt")
+
+# 2. Metadatos completos
 write_csv(dataset_225_definitivo, "metadatos_225_muestras_TFM.csv")
 
 cat("\nArchivos exportados exitosamente con N =", nrow(dataset_225_definitivo), "\n")
-cat(" - solo_pendientes_sra.txt (para Fase_2.sh)\n")
+cat(" - accesiones_sra.txt (para Fase_2.sh)\n")
 cat(" - metadatos_225_muestras_TFM.csv (para Fase_3.R)\n")

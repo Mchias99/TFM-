@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# ==========================================================
-# PIPELINE AUTORRESCABLE Y ROBUSTO - M. tuberculosis (TFM)
-# ==========================================================
 
-WORKDIR="/mnt/c/Users/migue/Desktop/TFM_R"
+# PIPELINE DESCARGA - M. tuberculosis 
+
+
+WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   
 cd "$WORKDIR" || exit 1
 
 mkdir -p raw_fastq fasta_files tbprofiler_results/results
@@ -13,16 +13,15 @@ LOGFILE="pipeline.log"
 FAILED_LOG="muestras_fallidas.txt"
 exec > >(tee -a "$LOGFILE") 2>&1
 
-echo "=========================================================="
-echo "   PIPELINE AUTOMATIZADO DE RESISTOMA CON RESCATE AUTOMÁTICO"
-echo "   Iniciado el: $(date)"
-echo "=========================================================="
 
-# --------------------------------------------------------
+echo "   PIPELINE DE DESCRAGA"
+echo "   Iniciado el: $(date)"
+
+
 # FASE 1: DESCARGA DE ARCHIVOS SRA
-# --------------------------------------------------------
-if [ -f "solo_pendientes_sra.txt" ]; then
-    sed -i 's/\r$//' solo_pendientes_sra.txt
+
+if [ -f "accesiones_sra.txt" ]; then
+    sed -i 's/\r$//' accesiones_sra.txt
     echo -e "\n[FASE 1/4] Descargando paquetes SRA..."
     
     while read -r run; do
@@ -38,20 +37,20 @@ if [ -f "solo_pendientes_sra.txt" ]; then
             continue
         fi
 
-        echo "--------------------------------------------------"
+        
         echo "[$(date +'%H:%M:%S')] Descargando paquete SRA para: ${run}"
         prefetch "${run}" -O raw_fastq/ --max-size 50G >/dev/null 2>&1
 
-    done < solo_pendientes_sra.txt
+    done < accesiones_sra.txt
 fi
 
-# --------------------------------------------------------
+
 # FASE 2: EXTRACCIÓN + QC + PROFILING + AUTO-RESCATE
-# --------------------------------------------------------
-if [ -f "solo_pendientes_sra.txt" ]; then
-    echo -e "\n=========================================================="
+
+if [ -f "accesiones_sra.txt" ]; then
+   
     echo "   [FASE 2/4] Procesamiento y Rescate Automático de Lecturas"
-    echo "=========================================================="
+    
 
     while read -r run; do
         [ -z "$run" ] && continue
@@ -60,10 +59,10 @@ if [ -f "solo_pendientes_sra.txt" ]; then
             continue
         fi
 
-        echo "--------------------------------------------------"
+        
         echo "[$(date +'%H:%M:%S')] Procesando muestra: ${run}"
 
-        # 1. Extracción desde SRA usando --split-3 para separar huérfanas
+        # 1. Extracción desde SRA usando --split-3 
         if [ -f "raw_fastq/${run}/${run}.sra" ] || [ -d "raw_fastq/${run}" ]; then
             echo "[1/3] Extrayendo FASTQ..."
             timeout 15m fasterq-dump --split-3 --skip-technical --outdir raw_fastq --temp /dev/shm "raw_fastq/${run}/${run}.sra" -e 4 >/dev/null 2>&1
@@ -117,7 +116,7 @@ if [ -f "solo_pendientes_sra.txt" ]; then
                 fi
             fi
 
-        # CASO B: Single-End desde origen
+        # CASO B: Single-End 
         elif [ -f "raw_fastq/${run}.fastq" ]; then
             echo "[2/3] Filtrando lecturas Single-End con fastp..."
 
@@ -148,14 +147,14 @@ if [ -f "solo_pendientes_sra.txt" ]; then
             rm -f "tbprofiler_results/vcf/${run}"*.vcf.gz "tbprofiler_results/vcf/${run}"*.vcf.gz.tbi
         fi
 
-    done < solo_pendientes_sra.txt
+    done < accesiones_sra.txt
 fi
 
-# --------------------------------------------------------
+
 # FASE 3: ENSAMBLADOS (FASTA) Y PROCESAMIENTO NCBI
-# --------------------------------------------------------
-if [ -f "solo_pendientes_gca.txt" ]; then
-    sed -i 's/\r$//' solo_pendientes_gca.txt
+
+if [ -f "accesiones_gca.txt" ]; then
+    sed -i 's/\r$//' accesiones_gca.txt
     echo -e "\n[FASE 3/4] Procesando genomas ensamblados NCBI (FASTA)..."
 
     while read -r gca; do
@@ -166,7 +165,7 @@ if [ -f "solo_pendientes_gca.txt" ]; then
             continue
         fi
 
-        echo "--------------------------------------------------"
+        
         echo "[$(date +'%H:%M:%S')] Procesando Ensamblado: ${gca}"
 
         ZIP_FILE="fasta_files/${gca}.zip"
@@ -185,42 +184,42 @@ if [ -f "solo_pendientes_gca.txt" ]; then
             rm -rf "${TEMP_DIR}" "${ZIP_FILE}"
         fi
 
-    done < solo_pendientes_gca.txt
+    done < accesiones_gca.txt
 fi
 
-# --------------------------------------------------------
+
 # FASE 4: MÓDULO DE RECUPERACIÓN PARA MUESTRAS FALTANTES
-# --------------------------------------------------------
+
 RESCUE_LOG="rescate_resultados.log"
 
-echo -e "\n=========================================================="
-echo "   INICIANDO MÓDULO DE RECUPERACIÓN PARA MUESTRAS FALTANTES"
+
+echo "   INICIANDO RECUPERACIÓN DE MUUESTRAS FALTANTES
 echo "   Iniciado el: $(date)"
-echo "=========================================================="
+
 
 MISSING_SRA="faltantes_sra.txt"
 MISSING_GCA="faltantes_gca.txt"
 > "$MISSING_SRA"
 > "$MISSING_GCA"
 
-# 1. Filtrar exactamente qué muestras SRA faltan por procesar
-if [ -f "solo_pendientes_sra.txt" ]; then
+
+if [ -f "accesiones_sra.txt" ]; then
     while read -r run; do
         [ -z "$run" ] && continue
         if [ ! -f "tbprofiler_results/results/${run}.results.json" ]; then
             echo "$run" >> "$MISSING_SRA"
         fi
-    done < solo_pendientes_sra.txt
+    done < accesiones_sra.txt
 fi
 
-# 2. Filtrar exactamente qué ensamblados GCA faltan por procesar
-if [ -f "solo_pendientes_gca.txt" ]; then
+
+if [ -f "accesiones_gca.txt" ]; then
     while read -r gca; do
         [ -z "$gca" ] && continue
         if [ ! -f "tbprofiler_results/results/${gca}.results.json" ]; then
             echo "$gca" >> "$MISSING_GCA"
         fi
-    done < solo_pendientes_gca.txt
+    done < accesiones_gca.txt
 fi
 
 NUM_SRA=$(wc -l < "$MISSING_SRA")
@@ -228,7 +227,6 @@ NUM_GCA=$(wc -l < "$MISSING_GCA")
 
 echo "Muestras SRA pendientes de rescate: ${NUM_SRA}"
 echo "Ensamblados GCA pendientes de rescate: ${NUM_GCA}"
-echo "--------------------------------------------------"
 
 # FASE 4A: RESCATE SRA VIA FASTQ-DUMP DIRECTO / ENA VIA HTTP
 if [ "$NUM_SRA" -gt 0 ]; then
@@ -323,12 +321,12 @@ fi
 
 awk '/INICIANDO MÓDULO DE RECUPERACIÓN PARA MUESTRAS FALTANTES/{found=1} found' "$LOGFILE" > "$RESCUE_LOG"
 
-# --------------------------------------------------------
+
 # FASE 5: CONSOLIDACIÓN GENERAL FINAL
-# --------------------------------------------------------
-echo -e "\n=========================================================="
+
+
 echo "   CONSOLIDANDO MATRIZ GENERAL DE RESULTADOS AL FINAL"
-echo "=========================================================="
+
 
 # Buscamos explícitamente archivos terminados en .results.json
 TOTAL_JSON=$(ls -1 tbprofiler_results/results/*.results.json 2>/dev/null | wc -l)
@@ -336,31 +334,27 @@ TOTAL_JSON=$(ls -1 tbprofiler_results/results/*.results.json 2>/dev/null | wc -l
 if [ "$TOTAL_JSON" -gt 0 ]; then
     echo "Encontrados $TOTAL_JSON archivos .results.json para consolidar..."
     
-    # 1. Entramos al directorio raíz de tb-profiler para evitar bugs de rutas
     cd tbprofiler_results || exit 1
     
-    # 2. Ejecutamos collate sin usar --dir. Por defecto buscará en ./results/
     if tb-profiler collate --prefix tbprofiler --full; then
         echo "[ÉXITO] Consolidación finalizada correctamente."
     else
         echo "[ERROR] tb-profiler collate falló internamente."
     fi
     
-    # 3. Volvemos al directorio de trabajo principal
     cd ..
 else
     echo "[AVISO] No se encontraron archivos .results.json en tbprofiler_results/results/"
 fi
 
-# --------------------------------------------------------
+
 # FASE 6: REVISIÓN DE COBERTURA Y MARCADO DE MUESTRAS (FLAGGING)
-# --------------------------------------------------------
-echo -e "\n=========================================================="
+
 echo "   REVISIÓN DE COBERTURA Y MARCADO DE MUESTRAS (FLAGGING)"
-echo "=========================================================="
+
 
 MAIN_SUMMARY="tbprofiler_results/tbprofiler.txt"
-LOW_COV_REPORT="muestras_baja_cobertura_flagged.txt"
+LOW_COV_REPORT="muestras_baja_cobertura.txt"
 
 if [ -f "$MAIN_SUMMARY" ]; then
     echo "Analizando métricas de cobertura en $MAIN_SUMMARY..."
@@ -412,10 +406,9 @@ else
     echo "[ERROR QC] No se encontró el resumen consolidado $MAIN_SUMMARY."
 fi
 
-echo -e "\n=========================================================="
+
 echo " PIPELINE AUTOMATIZADO COMPLETO FINALIZADO CON ÉXITO"
 echo " Finalizado el: $(date)"
 if [ -f "$FAILED_LOG" ]; then
     echo " Muestras no rescatables: $(wc -l < "$FAILED_LOG") (ver $FAILED_LOG)"
 fi
-echo "=========================================================="

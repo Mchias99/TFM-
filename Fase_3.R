@@ -1,13 +1,12 @@
-# ==============================================================================
-# SCRIPT 2: INTEGRACIÓN DEL RESISTOMA (TB-PROFILER + METADATOS)
-# ==============================================================================
+
+# SCRIPT 2: INTEGRACIÓN DEL RESISTOMA 
+
 
 library(tidyverse)
 library(janitor)
 
-setwd("C:/Users/migue/Desktop/TFM_R")
 
-# Función de limpieza de cadenas (remueve acentos y caracteres especiales)
+# Función de limpieza de cadenas 
 limpiar_texto <- function(x) {
   x %>%
     iconv(from = "", to = "UTF-8", sub = "") %>%
@@ -27,9 +26,9 @@ if (length(faltantes) > 0) {
   stop("ERROR: Faltan archivos de entrada: ", paste(faltantes, collapse = ", "))
 }
 
-# --------------------------------------------------------------------------
+
 # PASO 1: METADATOS DE LA COHORTE (Fase 1)
-# --------------------------------------------------------------------------
+
 df_metadatos <- read_csv("metadatos_225_muestras_TFM.csv", show_col_types = FALSE) %>%
   clean_names() %>%
   mutate(across(where(is.character), limpiar_texto)) %>%
@@ -37,9 +36,9 @@ df_metadatos <- read_csv("metadatos_225_muestras_TFM.csv", show_col_types = FALS
   filter(!is.na(sra_clean)) %>%
   distinct(sra_clean, .keep_all = TRUE)
 
-# --------------------------------------------------------------------------
+
 # PASO 2: RESUMEN TB-PROFILER (Lineajes + Tipo de Resistencia)
-# --------------------------------------------------------------------------
+
 df_resumen_tb <- read_tsv("tbprofiler_results/tbprofiler.txt", show_col_types = FALSE) %>%
   clean_names() %>%
   mutate(across(where(is.character), limpiar_texto)) %>%
@@ -48,18 +47,18 @@ df_resumen_tb <- read_tsv("tbprofiler_results/tbprofiler.txt", show_col_types = 
   distinct(sra_clean, .keep_all = TRUE) %>%
   select(sra_clean, main_lineage, sub_lineage, drtype)
 
-# --------------------------------------------------------------------------
+
 # PASO 3: DETALLE DE VARIANTES
-# --------------------------------------------------------------------------
+
 df_tbprofiler_var <- read_csv("tbprofiler_results/tbprofiler.variants.csv", show_col_types = FALSE) %>%
   clean_names() %>%
   mutate(across(where(is.character), limpiar_texto)) %>%
   mutate(sra_clean = str_extract(sample, "(SRR|ERR|DRR)\\d+|(GCA|GCF)_\\d+\\.\\d+")) %>%
   filter(!is.na(sra_clean))
 
-# --------------------------------------------------------------------------
+
 # PASO 4: CONSTRUCCIÓN DE LA TABLA MAESTRA (LEFT_JOIN PARA MANTENER N=225)
-# --------------------------------------------------------------------------
+
 cat("2. Construyendo la tabla maestra por muestra (incluye pansensibles)...\n")
 
 df_maestro <- df_metadatos %>%
@@ -71,9 +70,9 @@ df_maestro <- df_metadatos %>%
 
 cat("   Muestras en la cohorte con metadatos (N):", nrow(df_maestro), "\n")
 
-# --------------------------------------------------------------------------
+
 # PASO 5: UNIÓN CON DETALLE DE VARIANTES
-# --------------------------------------------------------------------------
+
 cat("3. Añadiendo el detalle de variantes (left_join preserva pansensibles)...\n")
 
 df_resistoma_detallado <- df_maestro %>%
@@ -85,10 +84,10 @@ df_resistoma_detallado <- df_maestro %>%
 
 write_csv(df_resistoma_detallado, "matriz_resistoma_detallada_TFM.csv")
 
-# --------------------------------------------------------------------------
-# PASO 6: RESUMEN POR MUESTRA (GRUPO ÚNICO POR SRA_CLEAN + FIRST())
-# --------------------------------------------------------------------------
-cat("4. Generando resumen por muestra (una fila por aislado)...\n")
+
+# PASO 6: RESUMEN POR MUESTRA 
+
+cat("4. Generando resumen por muestra ...\n")
 
 df_resistoma_resumido <- df_resistoma_detallado %>%
   group_by(sra_clean) %>%
@@ -115,29 +114,29 @@ df_resistoma_resumido <- df_resistoma_detallado %>%
 
 write_csv(df_resistoma_resumido, "matriz_resistoma_resumida_muestras_TFM.csv")
 
-# --------------------------------------------------------------------------
+
 # PASO 7: CÁLCULO DE FRECUENCIAS Y PORCENTAJES (NUEVA TABLA)
-# --------------------------------------------------------------------------
+
 cat("5. Calculando tabla global porcentual (Linajes, DR_type y Fármacos)...\n")
 
-# Variable global del total de muestras reales para sacar el % exacto
+
 total_muestras <- nrow(df_resistoma_resumido)
 
-# 7.1 Porcentajes de Linajes
+
 df_pct_linaje <- df_resistoma_resumido %>%
   count(main_lineage, name = "N") %>%
   mutate(Categoria = "Linaje Principal",
          Porcentaje = round((N / total_muestras) * 100, 2)) %>%
   rename(Subcategoria = main_lineage)
 
-# 7.2 Porcentajes de Tipos de Resistencia (drtype)
+
 df_pct_drtype <- df_resistoma_resumido %>%
   count(drtype, name = "N") %>%
   mutate(Categoria = "Perfil de Resistencia",
          Porcentaje = round((N / total_muestras) * 100, 2)) %>%
   rename(Subcategoria = drtype)
 
-# 7.3 Porcentajes por Fármaco Específico (separando múltiples resistencias)
+
 df_pct_farmacos <- df_resistoma_resumido %>%
   filter(farmacos_resistencia != "Sensible / Sin resistencia") %>%
   separate_rows(farmacos_resistencia, sep = ";\\s*") %>%
@@ -146,7 +145,7 @@ df_pct_farmacos <- df_resistoma_resumido %>%
          Porcentaje = round((N / total_muestras) * 100, 2)) %>%
   rename(Subcategoria = farmacos_resistencia)
 
-# Añadir la fila de muestras totalmente sensibles a la sección de fármacos
+
 n_sensibles <- sum(df_resistoma_resumido$farmacos_resistencia == "Sensible / Sin resistencia")
 df_pct_sensibles <- tibble(
   Subcategoria = "Sensible / Sin resistencia",
@@ -155,7 +154,7 @@ df_pct_sensibles <- tibble(
   Porcentaje = round((n_sensibles / total_muestras) * 100, 2)
 )
 
-# 7.4 Unir todo en una única tabla final estructurada
+# 7.4 Unir todo en una única tabla final 
 df_porcentajes_global <- bind_rows(
   df_pct_linaje,
   df_pct_drtype,
@@ -167,10 +166,7 @@ df_porcentajes_global <- bind_rows(
 
 write_csv(df_porcentajes_global, "tabla_frecuencias_porcentajes_TFM.csv")
 
-# --------------------------------------------------------------------------
-# SALIDA FINAL POR CONSOLA
-# --------------------------------------------------------------------------
-cat("\n==========================================================\n")
+
 cat(" INTEGRACIÓN DEL RESISTOMA COMPLETADA CON ÉXITO:\n")
 cat(" Muestras en la cohorte final (N):", total_muestras, "\n")
 cat(" Muestras pansensibles:", n_sensibles, "(", round((n_sensibles/total_muestras)*100, 1), "%)\n")
@@ -178,6 +174,5 @@ cat(" Archivos exportados:\n")
 cat("  1. matriz_resistoma_detallada_TFM.csv (Variantes por muestra)\n")
 cat("  2. matriz_resistoma_resumida_muestras_TFM.csv (1 fila = 1 muestra)\n")
 cat("  3. tabla_frecuencias_porcentajes_TFM.csv (Métricas globales)\n")
-cat("==========================================================\n")
 
 View(df_porcentajes_global)
